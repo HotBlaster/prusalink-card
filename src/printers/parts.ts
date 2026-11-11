@@ -5,6 +5,9 @@ export interface DrawState {
   objectFrac: number;
   nozzleGlow: number;
   bedGlow: number;
+  // Real toolhead position relative to the bed center, in -0.5..0.5 (0 when unknown).
+  shiftX: number;
+  shiftY: number;
 }
 
 const FAN_BLADES = [0, 72, 144, 216, 288];

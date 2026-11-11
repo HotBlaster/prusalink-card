@@ -1,4 +1,5 @@
 import { UNAVAILABLE_STATES } from './const';
+import { localize } from './localize';
 import type { HassEntity, HomeAssistant, PrusaLinkCardConfig } from './types';
 
 export type PrinterMode = 'off' | 'idle' | 'printing' | 'paused' | 'attention' | 'error';
@@ -6,6 +7,12 @@ export type PrinterMode = 'off' | 'idle' | 'printing' | 'paused' | 'attention' |
 export interface Temperature {
   current?: number;
   target?: number;
+}
+
+export interface Position {
+  x?: number;
+  y?: number;
+  z?: number;
 }
 
 export interface PrinterViewModel {
@@ -23,9 +30,14 @@ export interface PrinterViewModel {
   bedGlow: number;
   printSpeed?: number;
   material?: string;
+  previewUrl?: string;
+  position: Position;
+  power?: string;
+  energy?: string;
   canPause: boolean;
   canResume: boolean;
   canCancel: boolean;
+  canContinue: boolean;
   needsPowerOffConfirm: boolean;
 }
 
@@ -68,9 +80,20 @@ function textState(hass: HomeAssistant, id?: string): string | undefined {
 }
 
 function formatState(hass: HomeAssistant, entity?: HassEntity): string {
-  if (!entity) return 'Unavailable';
+  if (!entity) return localize(hass, 'state.unavailable');
   if (hass.formatEntityState) return hass.formatEntityState(entity);
   return entity.state.charAt(0).toUpperCase() + entity.state.slice(1);
+}
+
+export function formatEntity(hass: HomeAssistant, entity: HassEntity): string {
+  if (hass.formatEntityState) return hass.formatEntityState(entity);
+  const unit = entity.attributes.unit_of_measurement;
+  return unit ? `${entity.state} ${unit}` : entity.state;
+}
+
+export function formatSensor(hass: HomeAssistant, id?: string): string | undefined {
+  const entity = getEntity(hass, id);
+  return isAvailable(entity) ? formatEntity(hass, entity) : undefined;
 }
 
 export function glowLevel(current: number | undefined, target: number | undefined, reference: number): number {
@@ -112,11 +135,13 @@ export function buildViewModel(
     current: numericState(hass, config.bed_temp_entity),
     target: numericState(hass, config.bed_target_entity),
   };
+  const preview = getEntity(hass, config.preview_entity);
+  const previewUrl = preview?.attributes.entity_picture;
 
   return {
     mode,
     rawState,
-    stateLabel: powerOn === false ? 'Off' : formatState(hass, stateEntity),
+    stateLabel: powerOn === false ? localize(hass, 'state.off') : formatState(hass, stateEntity),
     powerOn,
     powerAvailable: isAvailable(power),
     progress: on && progress !== undefined ? Math.min(100, Math.max(0, progress)) : undefined,
@@ -129,9 +154,21 @@ export function buildViewModel(
     bedGlow: on ? glowLevel(bed.current, bed.target, BED_REFERENCE_TEMP) : 0,
     printSpeed: numericState(hass, config.print_speed_entity),
     material: textState(hass, config.material_entity),
+    previewUrl:
+      on && isAvailable(preview) && typeof previewUrl === 'string' ? previewUrl : undefined,
+    position: on
+      ? {
+          x: numericState(hass, config.x_position_entity),
+          y: numericState(hass, config.y_position_entity),
+          z: numericState(hass, config.z_height_entity),
+        }
+      : {},
+    power: formatSensor(hass, config.power_entity),
+    energy: formatSensor(hass, config.energy_entity),
     canPause: on && isPressable(getEntity(hass, config.pause_button_entity)),
     canResume: on && isPressable(getEntity(hass, config.resume_button_entity)),
     canCancel: on && isPressable(getEntity(hass, config.cancel_button_entity)),
+    canContinue: on && isPressable(getEntity(hass, config.continue_button_entity)),
     needsPowerOffConfirm: JOB_ACTIVE_MODES.includes(mode),
   };
 }

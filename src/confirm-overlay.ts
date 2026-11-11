@@ -4,6 +4,7 @@ import { property } from 'lit/decorators.js';
 export class PrusaLinkConfirm extends LitElement {
   @property() message = '';
   @property({ attribute: 'confirm-label' }) confirmLabel = 'Confirm';
+  @property({ attribute: 'cancel-label' }) cancelLabel = 'Back';
 
   static styles = css`
     :host {
@@ -54,7 +55,7 @@ export class PrusaLinkConfirm extends LitElement {
     return html`<div class="dialog" role="alertdialog" aria-modal="true">
       <p class="message">${this.message}</p>
       <div class="buttons">
-        <button @click=${() => this._emit('cancel')}>Cancel</button>
+        <button @click=${() => this._emit('cancel')}>${this.cancelLabel}</button>
         <button class="confirm" @click=${() => this._emit('confirm')}>${this.confirmLabel}</button>
       </div>
     </div>`;

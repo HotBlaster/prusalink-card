@@ -116,6 +116,11 @@ export function lift(z: number): string {
   return `transform:translate(0px,${round(-z)}px)`;
 }
 
+export function shift(axis: Axis, amount: number): string {
+  const [vx, vy] = AXIS_VECTORS[axis];
+  return `transform:translate(${round(vx * amount)}px,${round(vy * amount)}px)`;
+}
+
 export function viewBox(sizeX: number, sizeY: number, sizeZ: number, pad = 6): string {
   const minX = -pad;
   const minY = -sizeY * 0.5 - sizeZ - pad;

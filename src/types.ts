@@ -11,8 +11,15 @@ export interface HassEntity {
 export interface HomeAssistant {
   states: Record<string, HassEntity>;
   language: string;
+  locale?: { language: string };
   callService(domain: string, service: string, data?: Record<string, unknown>): Promise<unknown>;
   formatEntityState?(stateObj: HassEntity, state?: string): string;
+}
+
+export interface ExtraEntityConfig {
+  entity: string;
+  name?: string;
+  icon?: string;
 }
 
 export interface PrusaLinkCardConfig {
@@ -32,7 +39,15 @@ export interface PrusaLinkCardConfig {
   pause_button_entity?: string;
   resume_button_entity?: string;
   cancel_button_entity?: string;
+  continue_button_entity?: string;
+  preview_entity?: string;
+  x_position_entity?: string;
+  y_position_entity?: string;
+  z_height_entity?: string;
   power_switch_entity?: string;
+  power_entity?: string;
+  energy_entity?: string;
+  extra_entities?: Array<string | ExtraEntityConfig>;
 }
 
 declare global {

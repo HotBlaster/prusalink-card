@@ -1,96 +1,82 @@
 import { html, LitElement, nothing } from 'lit';
 import { property, state } from 'lit/decorators.js';
 import { MODEL_LABELS, PRINTER_MODELS } from './const';
+import { localize } from './localize';
 import type { HomeAssistant, PrusaLinkCardConfig } from './types';
 
-const sensor = (name: keyof PrusaLinkCardConfig, required = false) => ({
+type FieldName = keyof PrusaLinkCardConfig;
+
+const prusalink = (name: FieldName, domain: string, required = false) => ({
   name,
   required,
-  selector: { entity: { filter: { integration: 'prusalink', domain: 'sensor' } } },
+  selector: { entity: { filter: { integration: 'prusalink', domain } } },
 });
 
-const button = (name: keyof PrusaLinkCardConfig) => ({
+const sensorWithClass = (name: FieldName, deviceClass: string) => ({
   name,
-  selector: { entity: { filter: { integration: 'prusalink', domain: 'button' } } },
+  selector: { entity: { filter: { domain: 'sensor', device_class: deviceClass } } },
 });
 
-const SCHEMA = [
-  {
-    name: 'printer_model',
-    required: true,
-    selector: {
-      select: {
-        mode: 'dropdown',
-        options: PRINTER_MODELS.map((value) => ({ value, label: MODEL_LABELS[value] })),
+function buildSchema(hass: HomeAssistant, editableExtras: boolean) {
+  const section = (name: string, schema: unknown[]) => ({
+    name,
+    type: 'expandable',
+    flatten: true,
+    title: localize(hass, `editor.section.${name}`),
+    schema,
+  });
+
+  return [
+    {
+      name: 'printer_model',
+      required: true,
+      selector: {
+        select: {
+          mode: 'dropdown',
+          options: PRINTER_MODELS.map((value) => ({ value, label: MODEL_LABELS[value] })),
+        },
       },
     },
-  },
-  { name: 'name', selector: { text: {} } },
-  sensor('state_entity', true),
-  {
-    name: 'job',
-    type: 'expandable',
-    flatten: true,
-    title: 'Job',
-    schema: [
-      sensor('progress_entity'),
-      sensor('filename_entity'),
-      sensor('print_finish_entity'),
-      sensor('print_speed_entity'),
-      sensor('material_entity'),
-    ],
-  },
-  {
-    name: 'temperatures',
-    type: 'expandable',
-    flatten: true,
-    title: 'Temperatures',
-    schema: [
-      sensor('nozzle_temp_entity'),
-      sensor('nozzle_target_entity'),
-      sensor('bed_temp_entity'),
-      sensor('bed_target_entity'),
-    ],
-  },
-  {
-    name: 'controls',
-    type: 'expandable',
-    flatten: true,
-    title: 'Job controls',
-    schema: [button('pause_button_entity'), button('resume_button_entity'), button('cancel_button_entity')],
-  },
-  {
-    name: 'power',
-    type: 'expandable',
-    flatten: true,
-    title: 'Power',
-    schema: [
+    { name: 'name', selector: { text: {} } },
+    prusalink('state_entity', 'sensor', true),
+    section('job', [
+      prusalink('progress_entity', 'sensor'),
+      prusalink('filename_entity', 'sensor'),
+      prusalink('print_finish_entity', 'sensor'),
+      prusalink('print_speed_entity', 'sensor'),
+      prusalink('material_entity', 'sensor'),
+      prusalink('preview_entity', 'camera'),
+    ]),
+    section('temperatures', [
+      prusalink('nozzle_temp_entity', 'sensor'),
+      prusalink('nozzle_target_entity', 'sensor'),
+      prusalink('bed_temp_entity', 'sensor'),
+      prusalink('bed_target_entity', 'sensor'),
+    ]),
+    section('position', [
+      prusalink('x_position_entity', 'sensor'),
+      prusalink('y_position_entity', 'sensor'),
+      prusalink('z_height_entity', 'sensor'),
+    ]),
+    section('controls', [
+      prusalink('pause_button_entity', 'button'),
+      prusalink('resume_button_entity', 'button'),
+      prusalink('continue_button_entity', 'button'),
+      prusalink('cancel_button_entity', 'button'),
+    ]),
+    section('power', [
       {
         name: 'power_switch_entity',
         selector: { entity: { filter: { domain: ['switch', 'input_boolean'] } } },
       },
-    ],
-  },
-];
-
-const LABELS: Record<string, string> = {
-  printer_model: 'Printer model',
-  name: 'Name',
-  state_entity: 'Printer state sensor',
-  progress_entity: 'Progress',
-  filename_entity: 'Filename',
-  print_finish_entity: 'Print finish',
-  print_speed_entity: 'Print speed',
-  material_entity: 'Material',
-  nozzle_temp_entity: 'Nozzle temperature',
-  nozzle_target_entity: 'Nozzle target temperature',
-  bed_temp_entity: 'Heatbed temperature',
-  bed_target_entity: 'Heatbed target temperature',
-  pause_button_entity: 'Pause job button',
-  resume_button_entity: 'Resume job button',
-  cancel_button_entity: 'Cancel job button',
-  power_switch_entity: 'Power switch',
-};
+      sensorWithClass('power_entity', 'power'),
+      sensorWithClass('energy_entity', 'energy'),
+    ]),
+    ...(editableExtras
+      ? [section('extra', [{ name: 'extra_entities', selector: { entity: { multiple: true } } }])]
+      : []),
+  ];
+}
 
 export class PrusaLinkCardEditor extends LitElement {
   @property({ attribute: false }) hass?: HomeAssistant;
@@ -102,13 +88,16 @@ export class PrusaLinkCardEditor extends LitElement {
 
   protected render() {
     if (!this.hass || !this._config) return nothing;
+    // ha-form's entity picker only handles plain ids, so object entries stay YAML-only.
+    const editableExtras = (this._config.extra_entities ?? []).every((item) => typeof item === 'string');
     return html`<ha-form
-      .hass=${this.hass}
-      .data=${this._config}
-      .schema=${SCHEMA}
-      .computeLabel=${(schema: { name: string }) => LABELS[schema.name] ?? schema.name}
-      @value-changed=${this._valueChanged}
-    ></ha-form>`;
+        .hass=${this.hass}
+        .data=${this._config}
+        .schema=${buildSchema(this.hass, editableExtras)}
+        .computeLabel=${(schema: { name: string }) => localize(this.hass, `editor.${schema.name}`)}
+        @value-changed=${this._valueChanged}
+      ></ha-form>
+      ${editableExtras ? nothing : html`<p class="note">${localize(this.hass, 'editor.extra_yaml')}</p>`}`;
   }
 
   private _valueChanged(ev: CustomEvent<{ value: PrusaLinkCardConfig }>): void {

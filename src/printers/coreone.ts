@@ -1,11 +1,13 @@
 import { svg, type SVGTemplateResult } from 'lit';
-import { box, frontQuad, lift, PALETTE, sideQuad, slide, topQuad, viewBox } from './iso';
+import { box, frontQuad, lift, PALETTE, shift, sideQuad, slide, topQuad, viewBox } from './iso';
 import { bedSurface, printedObject, screen, toolhead, type DrawState } from './parts';
 
 const BED_TOP = 96;
 const MAX_OBJECT = 50;
 const CENTER_X = 55;
 const CENTER_Y = 55;
+const TRAVEL_X = 26;
+const TRAVEL_Y = 26;
 const GLASS = '#bfe3ff';
 
 export const COREONE_VIEWBOX = viewBox(110, 110, 150);
@@ -31,13 +33,17 @@ export function drawCoreOne(d: DrawState): SVGTemplateResult {
       ${printedObject(CENTER_X, CENTER_Y, BED_TOP, 26, 22, objectHeight)}
     </g>
 
-    <g class="anim anim-y" style=${slide('y', -12, 12)}>
-      ${box(8, 64, BED_TOP + 14, 94, 6, 6, PALETTE.black)}
-      ${box(6, 60, BED_TOP + 12, 10, 14, 12, PALETTE.orange)}
-      <g class="anim anim-x" style=${slide('x', -14, 14)}>
-        ${toolhead(CENTER_X, CENTER_Y, BED_TOP, d.nozzleGlow)}
+    <g class="shift" style=${shift('y', d.shiftY * 2 * TRAVEL_Y)}>
+      <g class="anim anim-y" style=${slide('y', -12, 12)}>
+        ${box(8, 64, BED_TOP + 14, 94, 6, 6, PALETTE.black)}
+        ${box(6, 60, BED_TOP + 12, 10, 14, 12, PALETTE.orange)}
+        <g class="shift" style=${shift('x', d.shiftX * 2 * TRAVEL_X)}>
+          <g class="anim anim-x" style=${slide('x', -14, 14)}>
+            ${toolhead(CENTER_X, CENTER_Y, BED_TOP, d.nozzleGlow)}
+          </g>
+        </g>
+        ${box(94, 60, BED_TOP + 12, 10, 14, 12, PALETTE.orange)}
       </g>
-      ${box(94, 60, BED_TOP + 12, 10, 14, 12, PALETTE.orange)}
     </g>
 
     ${box(98, 10, BED_TOP + 26, 4, 94, 3, PALETTE.steel)}

@@ -33,7 +33,8 @@ export const printerStyles = css`
     transition: fill-opacity 1s ease;
   }
 
-  svg.printer .lift {
+  svg.printer .lift,
+  svg.printer .shift {
     transition: transform 1.2s ease;
   }
 

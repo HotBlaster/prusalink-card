@@ -1,11 +1,13 @@
 import { svg, type SVGTemplateResult } from 'lit';
-import { box, lift, PALETTE, slide, viewBox } from './iso';
+import { box, lift, PALETTE, shift, slide, viewBox } from './iso';
 import { bedSurface, printedObject, screen, toolhead, type DrawState } from './parts';
 
 const BED_TOP = 18;
 const MAX_OBJECT = 42;
 const CENTER_X = 60;
 const CENTER_Y = 55;
+const TRAVEL_X = 22;
+const TRAVEL_Y = 20;
 
 export const MK4_VIEWBOX = viewBox(120, 110, 135);
 
@@ -19,18 +21,22 @@ export function drawMk4(d: DrawState): SVGTemplateResult {
     ${box(4, 72, 0, 10, 10, 120, PALETTE.black)}
     ${box(4, 72, 120, 112, 10, 12, PALETTE.black)}
 
-    <g class="anim anim-y" style=${slide('y', -10, 10)}>
-      ${box(40, 24, 8, 40, 62, 4, PALETTE.steel)}
-      ${bedSurface(19, 19, BED_TOP, 82, 72, d.bedGlow)}
-      ${printedObject(CENTER_X, CENTER_Y, BED_TOP, 28, 24, objectHeight)}
+    <g class="shift" style=${shift('y', -d.shiftY * 2 * TRAVEL_Y)}>
+      <g class="anim anim-y" style=${slide('y', -10, 10)}>
+        ${box(40, 24, 8, 40, 62, 4, PALETTE.steel)}
+        ${bedSurface(19, 19, BED_TOP, 82, 72, d.bedGlow)}
+        ${printedObject(CENTER_X, CENTER_Y, BED_TOP, 28, 24, objectHeight)}
+      </g>
     </g>
 
     <g class="lift" style=${lift(objectHeight)}>
       ${box(6, 62, 22, 14, 10, 26, PALETTE.orange)}
       ${box(14, 64, 40, 92, 6, 4, PALETTE.steel)}
       ${box(14, 64, 28, 92, 6, 4, PALETTE.steel)}
-      <g class="anim anim-x" style=${slide('x', -16, 16)}>
-        ${toolhead(CENTER_X, CENTER_Y, BED_TOP, d.nozzleGlow)}
+      <g class="shift" style=${shift('x', d.shiftX * 2 * TRAVEL_X)}>
+        <g class="anim anim-x" style=${slide('x', -16, 16)}>
+          ${toolhead(CENTER_X, CENTER_Y, BED_TOP, d.nozzleGlow)}
+        </g>
       </g>
       ${box(100, 62, 22, 14, 10, 26, PALETTE.orange)}
     </g>

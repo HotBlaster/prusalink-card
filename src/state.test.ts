@@ -2,17 +2,21 @@ import { describe, expect, it } from 'vitest';
 import { buildViewModel, formatDuration, glowLevel } from './state';
 import type { HassEntity, HomeAssistant, PrusaLinkCardConfig } from './types';
 
-const entity = (entity_id: string, state: string): HassEntity => ({
+const entity = (entity_id: string, state: string, attributes: Record<string, unknown> = {}): HassEntity => ({
   entity_id,
   state,
-  attributes: {},
+  attributes,
   last_changed: '',
   last_updated: '',
 });
 
-const mockHass = (states: Record<string, string>): HomeAssistant => ({
-  language: 'en',
-  states: Object.fromEntries(Object.entries(states).map(([id, s]) => [id, entity(id, s)])),
+type MockState = string | [string, Record<string, unknown>];
+
+const mockHass = (states: Record<string, MockState>, language = 'en'): HomeAssistant => ({
+  language,
+  states: Object.fromEntries(
+    Object.entries(states).map(([id, s]) => [id, typeof s === 'string' ? entity(id, s) : entity(id, s[0], s[1])]),
+  ),
   callService: async () => undefined,
 });
 
@@ -28,7 +32,14 @@ const config: PrusaLinkCardConfig = {
   pause_button_entity: 'button.mk4_pause',
   resume_button_entity: 'button.mk4_resume',
   cancel_button_entity: 'button.mk4_cancel',
+  continue_button_entity: 'button.mk4_continue',
+  preview_entity: 'camera.mk4_preview',
+  x_position_entity: 'sensor.mk4_x',
+  y_position_entity: 'sensor.mk4_y',
+  z_height_entity: 'sensor.mk4_z',
   power_switch_entity: 'switch.mk4_power',
+  power_entity: 'sensor.plug_power',
+  energy_entity: 'sensor.plug_energy',
 };
 
 describe('buildViewModel', () => {
@@ -127,6 +138,62 @@ describe('buildViewModel', () => {
     expect(buildViewModel(mockHass(states), config).progress).toBe(100);
     states['sensor.mk4_progress'] = 'abc';
     expect(buildViewModel(mockHass(states), config).progress).toBeUndefined();
+  });
+
+  it('offers continue only when the button is available', () => {
+    const states: Record<string, MockState> = { 'sensor.mk4': 'attention', 'button.mk4_continue': 'unknown' };
+    expect(buildViewModel(mockHass(states), config).canContinue).toBe(true);
+    states['button.mk4_continue'] = 'unavailable';
+    expect(buildViewModel(mockHass(states), config).canContinue).toBe(false);
+  });
+
+  it('shows power and energy even when the printer is off', () => {
+    const vm = buildViewModel(
+      mockHass({
+        'sensor.mk4': 'unavailable',
+        'switch.mk4_power': 'off',
+        'sensor.plug_power': ['0.4', { unit_of_measurement: 'W' }],
+        'sensor.plug_energy': ['12.34', { unit_of_measurement: 'kWh' }],
+      }),
+      config,
+    );
+    expect(vm.power).toBe('0.4 W');
+    expect(vm.energy).toBe('12.34 kWh');
+  });
+
+  it('uses formatEntityState when Home Assistant provides it', () => {
+    const hass = mockHass({ 'sensor.mk4': 'idle', 'sensor.plug_power': ['120', { unit_of_measurement: 'W' }] });
+    hass.formatEntityState = (e) => `formatted ${e.state}`;
+    expect(buildViewModel(hass, config).power).toBe('formatted 120');
+  });
+
+  it('reads the toolhead position only while on', () => {
+    const states: Record<string, MockState> = {
+      'sensor.mk4': 'printing',
+      'sensor.mk4_x': '125',
+      'sensor.mk4_y': '105.5',
+      'sensor.mk4_z': 'unavailable',
+    };
+    expect(buildViewModel(mockHass(states), config).position).toEqual({ x: 125, y: 105.5, z: undefined });
+    states['switch.mk4_power'] = 'off';
+    expect(buildViewModel(mockHass(states), config).position).toEqual({});
+  });
+
+  it('exposes the preview picture of an available camera', () => {
+    const states: Record<string, MockState> = {
+      'sensor.mk4': 'printing',
+      'camera.mk4_preview': ['idle', { entity_picture: '/api/camera_proxy/camera.mk4_preview?token=abc' }],
+    };
+    expect(buildViewModel(mockHass(states), config).previewUrl).toBe(
+      '/api/camera_proxy/camera.mk4_preview?token=abc',
+    );
+    states['camera.mk4_preview'] = ['unavailable', { entity_picture: '/x' }];
+    expect(buildViewModel(mockHass(states), config).previewUrl).toBeUndefined();
+  });
+
+  it('localizes the off label', () => {
+    const hass = mockHass({ 'sensor.mk4': 'idle', 'switch.mk4_power': 'off' }, 'it');
+    expect(buildViewModel(hass, config).stateLabel).toBe('Spenta');
   });
 });
 

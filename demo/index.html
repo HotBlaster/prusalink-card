@@ -75,6 +75,16 @@
       <label class="inline"><input type="checkbox" id="auto" /> Auto-advance progress</label>
       <label>Nozzle temp <input type="range" id="nozzle" min="20" max="260" value="215" /></label>
       <label>Bed temp <input type="range" id="bed" min="20" max="110" value="60" /></label>
+      <label class="inline"><input type="checkbox" id="realpos" /> Report toolhead position</label>
+      <label>Position X (mm) <input type="range" id="posx" min="0" max="250" value="125" /></label>
+      <label>Position Y (mm) <input type="range" id="posy" min="0" max="210" value="105" /></label>
+      <label>
+        Language
+        <select id="language">
+          <option value="en">English</option>
+          <option value="it">Italiano</option>
+        </select>
+      </label>
       <label class="inline"><input type="checkbox" id="light" /> Light theme</label>
     </div>
     <div class="cards" id="cards"></div>
@@ -90,6 +100,13 @@
         'mdi:timer-sand': '⏳',
         'mdi:speedometer': '⚡',
         'mdi:printer-3d-nozzle': '◉',
+        'mdi:play-circle-outline': '⏵',
+        'mdi:axis-arrow': '✛',
+        'mdi:flash': '⚡',
+        'mdi:lightning-bolt': 'Σ',
+        'mdi:lightbulb': '💡',
+        'mdi:fan': '✱',
+        'mdi:thermometer': '🌡',
       };
 
       customElements.define(
@@ -122,7 +139,15 @@
         get progress() { return Number($('progress').value); },
         get nozzle() { return Number($('nozzle').value); },
         get bed() { return Number($('bed').value); },
+        get realPos() { return $('realpos').checked; },
+        get posX() { return Number($('posx').value); },
+        get posY() { return Number($('posy').value); },
       };
+
+      const extras = { 'light.prusa_enclosure_light': 'on', 'switch.prusa_filter_fan': 'off' };
+      const PREVIEW = 'data:image/svg+xml,' + encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M8 38h48l-8 14H16z" fill="#ed6b21"/><rect x="22" y="22" width="18" height="16" fill="#ed6b21"/><rect x="26" y="12" width="6" height="10" fill="#c2541a"/></svg>',
+      );
 
       const OPTIONS = ['idle', 'busy', 'printing', 'paused', 'finished', 'stopped', 'error', 'attention', 'ready'];
       const entity = (entity_id, state, attributes = {}) => ({
@@ -152,6 +177,16 @@
           entity('button.prusa_pause_job', av(s === 'printing', 'unknown')),
           entity('button.prusa_resume_job', av(s === 'paused', 'unknown')),
           entity('button.prusa_cancel_job', av(s === 'printing' || s === 'paused', 'unknown')),
+          entity('button.prusa_continue_job', av(s === 'attention', 'unknown')),
+          entity('camera.prusa_preview', av(hasJob, 'idle'), { entity_picture: PREVIEW }),
+          entity('sensor.prusa_x_position', av(ctl.realPos, ctl.posX)),
+          entity('sensor.prusa_y_position', av(ctl.realPos, ctl.posY)),
+          entity('sensor.prusa_z_height', av(ctl.realPos, (ctl.progress * 0.4).toFixed(2))),
+          entity('sensor.prusa_plug_power', !on ? 0.4 : s === 'printing' ? 128 : 9.5, { unit_of_measurement: 'W' }),
+          entity('sensor.prusa_plug_energy', 12.34, { unit_of_measurement: 'kWh' }),
+          entity('light.prusa_enclosure_light', extras['light.prusa_enclosure_light'], { friendly_name: 'Enclosure light' }),
+          entity('switch.prusa_filter_fan', extras['switch.prusa_filter_fan'], { friendly_name: 'Filter fan' }),
+          entity('sensor.prusa_enclosure_temperature', 31.5, { friendly_name: 'Enclosure', unit_of_measurement: '°C', icon: 'mdi:thermometer' }),
           entity('switch.prusa_power', on ? 'on' : 'off', { friendly_name: 'Prusa power' }),
         ];
         return Object.fromEntries(list.map((e) => [e.entity_id, e]));
@@ -159,9 +194,18 @@
 
       async function callService(domain, service, data) {
         console.log('callService', domain, service, data);
-        if (domain === 'homeassistant') $('power').checked = service === 'turn_on';
+        if (domain === 'homeassistant' && service === 'toggle') {
+          extras[data.entity_id] = extras[data.entity_id] === 'on' ? 'off' : 'on';
+        } else if (domain === 'homeassistant') {
+          $('power').checked = service === 'turn_on';
+        }
         if (domain === 'button') {
-          const next = { 'button.prusa_pause_job': 'paused', 'button.prusa_resume_job': 'printing', 'button.prusa_cancel_job': 'stopped' };
+          const next = {
+            'button.prusa_pause_job': 'paused',
+            'button.prusa_resume_job': 'printing',
+            'button.prusa_continue_job': 'printing',
+            'button.prusa_cancel_job': 'stopped',
+          };
           $('state').value = next[data.entity_id] ?? ctl.state;
         }
         update();
@@ -181,7 +225,19 @@
         pause_button_entity: 'button.prusa_pause_job',
         resume_button_entity: 'button.prusa_resume_job',
         cancel_button_entity: 'button.prusa_cancel_job',
+        continue_button_entity: 'button.prusa_continue_job',
+        preview_entity: 'camera.prusa_preview',
+        x_position_entity: 'sensor.prusa_x_position',
+        y_position_entity: 'sensor.prusa_y_position',
+        z_height_entity: 'sensor.prusa_z_height',
         power_switch_entity: 'switch.prusa_power',
+        power_entity: 'sensor.prusa_plug_power',
+        energy_entity: 'sensor.prusa_plug_energy',
+        extra_entities: [
+          'light.prusa_enclosure_light',
+          { entity: 'switch.prusa_filter_fan', icon: 'mdi:fan' },
+          'sensor.prusa_enclosure_temperature',
+        ],
       };
 
       const cards = [
@@ -196,12 +252,15 @@
       });
 
       function update() {
-        const hass = { states: computeStates(), language: 'en', callService };
+        const hass = { states: computeStates(), language: $('language').value, callService };
         for (const card of cards) card.hass = hass;
       }
 
-      for (const id of ['power', 'state', 'progress', 'nozzle', 'bed']) $(id).addEventListener('input', update);
+      for (const id of ['power', 'state', 'progress', 'nozzle', 'bed', 'realpos', 'posx', 'posy', 'language']) {
+        $(id).addEventListener('input', update);
+      }
       $('light').addEventListener('change', () => document.body.classList.toggle('light', $('light').checked));
+      document.addEventListener('hass-more-info', (ev) => console.log('more-info', ev.detail.entityId));
 
       setInterval(() => {
         if (!$('auto').checked || ctl.state !== 'printing' || !ctl.power) return;

@@ -1,6 +1,6 @@
 import { html, svg, type SVGTemplateResult, type TemplateResult } from 'lit';
 import type { PrinterModel } from '../const';
-import { MODEL_LABELS } from '../const';
+import { BUILD_VOLUME, MODEL_LABELS } from '../const';
 import type { PrinterViewModel } from '../state';
 import { COREONE_VIEWBOX, drawCoreOne } from './coreone';
 import { drawMk4, MK4_VIEWBOX } from './mk4';
@@ -23,12 +23,20 @@ const GLOW_GRADIENT = svg`
   </radialGradient>
 `;
 
+function relative(value: number | undefined, size: number): number {
+  if (value === undefined) return 0;
+  return Math.min(0.5, Math.max(-0.5, value / size - 0.5));
+}
+
 export function renderPrinter(model: PrinterModel, vm: PrinterViewModel): TemplateResult {
   const printer = PRINTERS[model];
+  const volume = BUILD_VOLUME[model];
   const drawState: DrawState = {
     objectFrac: (vm.progress ?? 0) / 100,
     nozzleGlow: vm.nozzleGlow,
     bedGlow: vm.bedGlow,
+    shiftX: relative(vm.position.x, volume.x),
+    shiftY: relative(vm.position.y, volume.y),
   };
   return html`<svg
     class="printer ${vm.mode}"

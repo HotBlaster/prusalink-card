@@ -1,11 +1,13 @@
 import { svg, type SVGTemplateResult } from 'lit';
-import { box, frontQuad, lift, PALETTE, project, slide, viewBox } from './iso';
+import { box, frontQuad, lift, PALETTE, project, shift, slide, viewBox } from './iso';
 import { bedSurface, printedObject, screen, toolhead, type DrawState } from './parts';
 
 const BED_TOP = 96;
 const MAX_OBJECT = 46;
 const CENTER_X = 85;
 const CENTER_Y = 75;
+const TRAVEL_X = 50;
+const TRAVEL_Y = 40;
 const BED = { x: 15, y: 15, w: 140, d: 120 };
 const DOCKS = [22, 50, 78, 106, 134];
 
@@ -64,13 +66,17 @@ export function drawXl(d: DrawState): SVGTemplateResult {
       ${printedObject(CENTER_X, CENTER_Y, BED_TOP, 30, 24, objectHeight)}
     </g>
 
-    <g class="anim anim-y" style=${slide('y', -14, 14)}>
-      ${box(8, 84, BED_TOP + 14, 154, 6, 6, PALETTE.black)}
-      ${box(6, 80, BED_TOP + 12, 12, 14, 12, PALETTE.orange)}
-      <g class="anim anim-x" style=${slide('x', -18, 18)}>
-        ${toolhead(CENTER_X, CENTER_Y, BED_TOP, d.nozzleGlow)}
+    <g class="shift" style=${shift('y', d.shiftY * 2 * TRAVEL_Y)}>
+      <g class="anim anim-y" style=${slide('y', -14, 14)}>
+        ${box(8, 84, BED_TOP + 14, 154, 6, 6, PALETTE.black)}
+        ${box(6, 80, BED_TOP + 12, 12, 14, 12, PALETTE.orange)}
+        <g class="shift" style=${shift('x', d.shiftX * 2 * TRAVEL_X)}>
+          <g class="anim anim-x" style=${slide('x', -18, 18)}>
+            ${toolhead(CENTER_X, CENTER_Y, BED_TOP, d.nozzleGlow)}
+          </g>
+        </g>
+        ${box(152, 80, BED_TOP + 12, 12, 14, 12, PALETTE.orange)}
       </g>
-      ${box(152, 80, BED_TOP + 12, 12, 14, 12, PALETTE.orange)}
     </g>
 
     ${box(158, 10, BED_TOP + 26, 4, 130, 3, PALETTE.steel)}

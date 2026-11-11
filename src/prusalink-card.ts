@@ -3,8 +3,17 @@ import { property, state } from 'lit/decorators.js';
 import './confirm-overlay';
 import './editor';
 import { CARD_VERSION, MODEL_LABELS, PRINTER_MODELS } from './const';
+import { extraIcon, extraService, normalizeExtras } from './extras';
+import { localize } from './localize';
 import { printerStyles, renderPrinter } from './printers';
-import { buildViewModel, formatDuration, type PrinterViewModel, type Temperature } from './state';
+import {
+  buildViewModel,
+  formatDuration,
+  formatEntity,
+  type Position,
+  type PrinterViewModel,
+  type Temperature,
+} from './state';
 import type { HomeAssistant, PrusaLinkCardConfig } from './types';
 
 interface PendingConfirm {
@@ -17,6 +26,13 @@ function formatTemperature(t: Temperature): string | undefined {
   if (t.current === undefined) return undefined;
   const current = `${Math.round(t.current)}°C`;
   return t.target ? `${current} / ${Math.round(t.target)}°C` : current;
+}
+
+function formatPosition(p: Position): string | undefined {
+  const parts = (['x', 'y', 'z'] as const)
+    .filter((axis) => p[axis] !== undefined)
+    .map((axis) => `${axis.toUpperCase()} ${p[axis]!.toFixed(1)}`);
+  return parts.length ? `${parts.join(' · ')} mm` : undefined;
 }
 
 export class PrusaLinkCard extends LitElement {
@@ -56,7 +72,7 @@ export class PrusaLinkCard extends LitElement {
   protected render() {
     if (!this._config || !this.hass) return nothing;
     if (!this._config.state_entity) {
-      return html`<ha-card><div class="warning">Please set <code>state_entity</code> to the PrusaLink printer state sensor.</div></ha-card>`;
+      return html`<ha-card><div class="warning">${this._t('card.missing_state')}</div></ha-card>`;
     }
 
     const vm = buildViewModel(this.hass, this._config);
@@ -74,11 +90,12 @@ export class PrusaLinkCard extends LitElement {
         ${this._renderPowerButton(vm)}
       </div>
       <div class="printer-wrap">${renderPrinter(this._config.printer_model, vm)}</div>
-      ${this._renderProgress(vm)} ${this._renderInfo(vm)} ${this._renderActions(vm)}
+      ${this._renderProgress(vm)} ${this._renderInfo(vm)} ${this._renderExtras()} ${this._renderActions(vm)}
       ${this._confirm
         ? html`<prusalink-confirm
             .message=${this._confirm.message}
             .confirmLabel=${this._confirm.confirmLabel}
+            .cancelLabel=${this._t('confirm.back')}
             @confirm=${this._onConfirm}
             @cancel=${this._onCancel}
           ></prusalink-confirm>`
@@ -86,12 +103,17 @@ export class PrusaLinkCard extends LitElement {
     </ha-card>`;
   }
 
+  private _t(key: string): string {
+    return localize(this.hass, key);
+  }
+
   private _renderPowerButton(vm: PrinterViewModel) {
     if (!this._config?.power_switch_entity) return nothing;
+    const label = this._t(vm.powerOn ? 'power.turn_off' : 'power.turn_on');
     return html`<button
       class="power ${vm.powerOn ? 'on' : ''}"
-      title=${vm.powerOn ? 'Turn off' : 'Turn on'}
-      aria-label=${vm.powerOn ? 'Turn printer off' : 'Turn printer on'}
+      title=${label}
+      aria-label=${label}
       aria-pressed=${vm.powerOn ? 'true' : 'false'}
       ?disabled=${!vm.powerAvailable}
       @click=${() => this._togglePower(vm)}
@@ -101,34 +123,54 @@ export class PrusaLinkCard extends LitElement {
   }
 
   private _renderProgress(vm: PrinterViewModel) {
-    if (vm.progress === undefined) return nothing;
+    if (vm.progress === undefined && !vm.previewUrl) return nothing;
+    const previewEntity = this._config!.preview_entity!;
     return html`<div class="progress">
-      <div class="progress-text">
-        <span class="filename" title=${vm.filename ?? ''}>${vm.filename ?? ''}</span>
-        <span class="percent">${Math.round(vm.progress)}%</span>
-      </div>
-      <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow=${vm.progress}>
-        <div class="fill" style="width:${vm.progress}%"></div>
-      </div>
+      ${vm.previewUrl
+        ? html`<img class="preview" src=${vm.previewUrl} alt="" @click=${() => this._moreInfo(previewEntity)} />`
+        : nothing}
+      ${vm.progress !== undefined
+        ? html`<div class="progress-body">
+            <div class="progress-text">
+              <span class="filename" title=${vm.filename ?? ''}>${vm.filename ?? ''}</span>
+              <span class="percent">${Math.round(vm.progress)}%</span>
+            </div>
+            <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow=${vm.progress}>
+              <div class="fill" style="width:${vm.progress}%"></div>
+            </div>
+          </div>`
+        : nothing}
     </div>`;
   }
 
   private _renderInfo(vm: PrinterViewModel) {
+    const on = vm.mode !== 'off';
     const items: Array<[string, string, string | undefined]> = [
-      ['mdi:printer-3d-nozzle-heat', 'Nozzle', formatTemperature(vm.nozzle)],
-      ['mdi:radiator', 'Bed', formatTemperature(vm.bed)],
-      ['mdi:timer-sand', 'Remaining', vm.remainingSeconds !== undefined ? formatDuration(vm.remainingSeconds) : undefined],
-      ['mdi:speedometer', 'Speed', vm.printSpeed !== undefined ? `${Math.round(vm.printSpeed)}%` : undefined],
-      ['mdi:printer-3d-nozzle', 'Material', vm.material],
+      ...(on
+        ? ([
+            ['mdi:printer-3d-nozzle-heat', 'info.nozzle', formatTemperature(vm.nozzle)],
+            ['mdi:radiator', 'info.bed', formatTemperature(vm.bed)],
+            [
+              'mdi:timer-sand',
+              'info.remaining',
+              vm.remainingSeconds !== undefined ? formatDuration(vm.remainingSeconds) : undefined,
+            ],
+            ['mdi:speedometer', 'info.speed', vm.printSpeed !== undefined ? `${Math.round(vm.printSpeed)}%` : undefined],
+            ['mdi:printer-3d-nozzle', 'info.material', vm.material],
+            ['mdi:axis-arrow', 'info.position', formatPosition(vm.position)],
+          ] as Array<[string, string, string | undefined]>)
+        : []),
+      ['mdi:flash', 'info.power', vm.power],
+      ['mdi:lightning-bolt', 'info.energy', vm.energy],
     ];
     const visible = items.filter(([, , value]) => value !== undefined);
-    if (vm.mode === 'off' || visible.length === 0) return nothing;
+    if (visible.length === 0) return nothing;
     return html`<div class="info">
       ${visible.map(
-        ([icon, label, value]) => html`<div class="info-item">
+        ([icon, key, value]) => html`<div class="info-item">
           <ha-icon icon=${icon}></ha-icon>
           <div>
-            <div class="label">${label}</div>
+            <div class="label">${this._t(key)}</div>
             <div class="value">${value}</div>
           </div>
         </div>`,
@@ -136,22 +178,50 @@ export class PrusaLinkCard extends LitElement {
     </div>`;
   }
 
+  private _renderExtras() {
+    const extras = normalizeExtras(this._config!.extra_entities);
+    if (!extras.length) return nothing;
+    return html`<div class="extras">
+      ${extras.map((extra) => {
+        const entity = this.hass!.states[extra.entity];
+        const name = extra.name ?? (entity?.attributes.friendly_name as string | undefined) ?? extra.entity;
+        return html`<button
+          class="extra ${entity?.state === 'on' ? 'active' : ''}"
+          title=${name}
+          ?disabled=${!entity}
+          @click=${() => this._extraClick(extra.entity)}
+        >
+          <ha-icon icon=${extraIcon(extra, entity)}></ha-icon>
+          <span class="extra-name">${name}</span>
+          <span class="extra-state">${entity ? formatEntity(this.hass!, entity) : ''}</span>
+        </button>`;
+      })}
+    </div>`;
+  }
+
   private _renderActions(vm: PrinterViewModel) {
     const config = this._config!;
     const buttons: TemplateResult[] = [];
     if (vm.canPause && config.pause_button_entity) {
-      buttons.push(this._actionButton('mdi:pause', 'Pause', () => this._press(config.pause_button_entity!)));
+      buttons.push(this._actionButton('mdi:pause', 'action.pause', () => this._press(config.pause_button_entity!)));
     }
     if (vm.canResume && config.resume_button_entity) {
-      buttons.push(this._actionButton('mdi:play', 'Resume', () => this._press(config.resume_button_entity!)));
+      buttons.push(this._actionButton('mdi:play', 'action.resume', () => this._press(config.resume_button_entity!)));
+    }
+    if (vm.canContinue && config.continue_button_entity) {
+      buttons.push(
+        this._actionButton('mdi:play-circle-outline', 'action.continue', () =>
+          this._press(config.continue_button_entity!),
+        ),
+      );
     }
     if (vm.canCancel && config.cancel_button_entity) {
       buttons.push(
         this._actionButton(
           'mdi:stop',
-          'Cancel',
+          'action.cancel',
           () =>
-            this._askConfirm('Cancel the current print job?', 'Cancel job', () =>
+            this._askConfirm(this._t('confirm.cancel_job'), this._t('confirm.cancel_job_action'), () =>
               this._press(config.cancel_button_entity!),
             ),
           true,
@@ -161,9 +231,9 @@ export class PrusaLinkCard extends LitElement {
     return buttons.length ? html`<div class="actions">${buttons}</div>` : nothing;
   }
 
-  private _actionButton(icon: string, label: string, onClick: () => void, danger = false): TemplateResult {
+  private _actionButton(icon: string, labelKey: string, onClick: () => void, danger = false): TemplateResult {
     return html`<button class="action ${danger ? 'danger' : ''}" @click=${onClick}>
-      <ha-icon icon=${icon}></ha-icon><span>${label}</span>
+      <ha-icon icon=${icon}></ha-icon><span>${this._t(labelKey)}</span>
     </button>`;
   }
 
@@ -173,10 +243,23 @@ export class PrusaLinkCard extends LitElement {
     const turnOff = vm.powerOn === true;
     const run = () => this._callService('homeassistant', turnOff ? 'turn_off' : 'turn_on', { entity_id: entityId });
     if (turnOff && vm.needsPowerOffConfirm) {
-      this._askConfirm('A print job is in progress. Turn the printer off anyway?', 'Turn off', run);
+      this._askConfirm(this._t('confirm.power_off'), this._t('confirm.power_off_action'), run);
     } else {
       run();
     }
+  }
+
+  private _extraClick(entityId: string): void {
+    const service = extraService(entityId);
+    if (service) {
+      this._callService(service[0], service[1], { entity_id: entityId });
+    } else {
+      this._moreInfo(entityId);
+    }
+  }
+
+  private _moreInfo(entityId: string): void {
+    this.dispatchEvent(new CustomEvent('hass-more-info', { detail: { entityId }, bubbles: true, composed: true }));
   }
 
   private _press(entityId: string): void {
@@ -298,6 +381,24 @@ export class PrusaLinkCard extends LitElement {
       .percent {
         font-weight: 500;
       }
+      .progress {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .progress-body {
+        flex: 1;
+        min-width: 0;
+      }
+      .preview {
+        flex: none;
+        width: 56px;
+        height: 56px;
+        object-fit: contain;
+        border-radius: 8px;
+        background: var(--secondary-background-color, rgba(127, 127, 127, 0.15));
+        cursor: pointer;
+      }
       .bar {
         height: 8px;
         border-radius: 4px;
@@ -330,6 +431,49 @@ export class PrusaLinkCard extends LitElement {
       }
       .value {
         font-weight: 500;
+      }
+      .extras {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 14px;
+      }
+      .extra {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        max-width: 100%;
+        padding: 4px 12px 4px 8px;
+        border-radius: 16px;
+        border: 1px solid var(--divider-color, rgba(127, 127, 127, 0.3));
+        background: transparent;
+        color: var(--primary-text-color);
+        font: inherit;
+        font-size: 0.85em;
+        cursor: pointer;
+      }
+      .extra:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .extra ha-icon {
+        --mdc-icon-size: 18px;
+        color: var(--secondary-text-color);
+      }
+      .extra.active {
+        border-color: var(--plc-accent);
+      }
+      .extra.active ha-icon {
+        color: var(--plc-accent);
+      }
+      .extra-name {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .extra-state {
+        color: var(--secondary-text-color);
+        white-space: nowrap;
       }
       .actions {
         display: flex;
