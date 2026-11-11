@@ -1,0 +1,28 @@
+{
+  "name": "prusalink-card",
+  "version": "0.1.0",
+  "description": "Home Assistant Lovelace card for PrusaLink printers with an animated printer",
+  "type": "module",
+  "main": "dist/prusalink-card.js",
+  "license": "MIT",
+  "scripts": {
+    "build": "rollup -c",
+    "watch": "rollup -c --watch",
+    "dev": "rollup -c --watch --environment DEV",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "lit": "^3.2.1"
+  },
+  "devDependencies": {
+    "@rollup/plugin-node-resolve": "^16.0.0",
+    "@rollup/plugin-terser": "^0.4.4",
+    "@rollup/plugin-typescript": "^12.1.2",
+    "rollup": "^4.28.0",
+    "rollup-plugin-serve": "^3.0.0",
+    "tslib": "^2.8.1",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.0"
+  }
+}

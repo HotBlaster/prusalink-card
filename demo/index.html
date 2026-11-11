@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>PrusaLink Card – demo</title>
+    <style>
+      body {
+        --primary-text-color: #e1e1e1;
+        --secondary-text-color: #9b9b9b;
+        --card-background-color: #1c1c1f;
+        --secondary-background-color: #2a2b2f;
+        --divider-color: #3a3a3e;
+        --error-color: #db4437;
+        margin: 0;
+        padding: 24px;
+        display: flex;
+        gap: 24px;
+        align-items: flex-start;
+        font-family: Roboto, 'Segoe UI', sans-serif;
+        background: #111318;
+        color: var(--primary-text-color);
+      }
+      body.light {
+        --primary-text-color: #212121;
+        --secondary-text-color: #727272;
+        --card-background-color: #fff;
+        --secondary-background-color: #eceff1;
+        --divider-color: #e0e0e0;
+        background: #fafafa;
+      }
+      .controls {
+        flex: none;
+        width: 240px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .controls label {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        font-size: 0.9em;
+      }
+      .controls label.inline {
+        flex-direction: row;
+        align-items: center;
+      }
+      .cards {
+        flex: 1;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+        gap: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="controls">
+      <strong>Mock PrusaLink</strong>
+      <label class="inline"><input type="checkbox" id="power" checked /> Power switch on</label>
+      <label>
+        Printer state
+        <select id="state">
+          <option>idle</option>
+          <option>ready</option>
+          <option>busy</option>
+          <option selected>printing</option>
+          <option>paused</option>
+          <option>finished</option>
+          <option>stopped</option>
+          <option>attention</option>
+          <option>error</option>
+        </select>
+      </label>
+      <label>Progress <input type="range" id="progress" min="0" max="100" value="35" /></label>
+      <label class="inline"><input type="checkbox" id="auto" /> Auto-advance progress</label>
+      <label>Nozzle temp <input type="range" id="nozzle" min="20" max="260" value="215" /></label>
+      <label>Bed temp <input type="range" id="bed" min="20" max="110" value="60" /></label>
+      <label class="inline"><input type="checkbox" id="light" /> Light theme</label>
+    </div>
+    <div class="cards" id="cards"></div>
+
+    <script type="module">
+      const ICONS = {
+        'mdi:power': '⏻',
+        'mdi:pause': '❚❚',
+        'mdi:play': '▶',
+        'mdi:stop': '■',
+        'mdi:printer-3d-nozzle-heat': '🔥',
+        'mdi:radiator': '♨',
+        'mdi:timer-sand': '⏳',
+        'mdi:speedometer': '⚡',
+        'mdi:printer-3d-nozzle': '◉',
+      };
+
+      customElements.define(
+        'ha-icon',
+        class extends HTMLElement {
+          static observedAttributes = ['icon'];
+          attributeChangedCallback() {
+            this.textContent = ICONS[this.getAttribute('icon')] ?? '•';
+          }
+        },
+      );
+
+      customElements.define(
+        'ha-card',
+        class extends HTMLElement {
+          constructor() {
+            super();
+            this.attachShadow({ mode: 'open' }).innerHTML =
+              '<style>:host{display:block;background:var(--card-background-color);border-radius:12px;color:var(--primary-text-color);box-shadow:0 2px 8px rgba(0,0,0,.25)}</style><slot></slot>';
+          }
+        },
+      );
+
+      await import('../dist/prusalink-card.js');
+
+      const $ = (id) => document.getElementById(id);
+      const ctl = {
+        get power() { return $('power').checked; },
+        get state() { return $('state').value; },
+        get progress() { return Number($('progress').value); },
+        get nozzle() { return Number($('nozzle').value); },
+        get bed() { return Number($('bed').value); },
+      };
+
+      const OPTIONS = ['idle', 'busy', 'printing', 'paused', 'finished', 'stopped', 'error', 'attention', 'ready'];
+      const entity = (entity_id, state, attributes = {}) => ({
+        entity_id,
+        state: String(state),
+        attributes,
+        last_changed: '',
+        last_updated: '',
+      });
+
+      function computeStates() {
+        const on = ctl.power;
+        const s = ctl.state;
+        const active = ['printing', 'paused', 'attention'].includes(s);
+        const hasJob = active || ['finished', 'stopped'].includes(s);
+        const av = (cond, value) => (on && cond ? value : 'unavailable');
+        const list = [
+          entity('sensor.prusa', on ? s : 'unavailable', { friendly_name: 'Prusa', device_class: 'enum', options: OPTIONS }),
+          entity('sensor.prusa_progress', av(hasJob, ctl.progress)),
+          entity('sensor.prusa_filename', av(hasJob, 'benchy_0.4n_0.2mm_PETG_MK4_1h12m.bgcode')),
+          entity('sensor.prusa_print_finish', av(active, new Date(Date.now() + (100 - ctl.progress) * 45000).toISOString())),
+          entity('sensor.prusa_print_speed', av(true, 100)),
+          entity('sensor.prusa_nozzle_temperature', av(true, ctl.nozzle)),
+          entity('sensor.prusa_nozzle_target_temperature', av(true, active ? 215 : 0)),
+          entity('sensor.prusa_heatbed_temperature', av(true, ctl.bed)),
+          entity('sensor.prusa_heatbed_target_temperature', av(true, active ? 60 : 0)),
+          entity('button.prusa_pause_job', av(s === 'printing', 'unknown')),
+          entity('button.prusa_resume_job', av(s === 'paused', 'unknown')),
+          entity('button.prusa_cancel_job', av(s === 'printing' || s === 'paused', 'unknown')),
+          entity('switch.prusa_power', on ? 'on' : 'off', { friendly_name: 'Prusa power' }),
+        ];
+        return Object.fromEntries(list.map((e) => [e.entity_id, e]));
+      }
+
+      async function callService(domain, service, data) {
+        console.log('callService', domain, service, data);
+        if (domain === 'homeassistant') $('power').checked = service === 'turn_on';
+        if (domain === 'button') {
+          const next = { 'button.prusa_pause_job': 'paused', 'button.prusa_resume_job': 'printing', 'button.prusa_cancel_job': 'stopped' };
+          $('state').value = next[data.entity_id] ?? ctl.state;
+        }
+        update();
+      }
+
+      const baseConfig = {
+        type: 'custom:prusalink-card',
+        state_entity: 'sensor.prusa',
+        progress_entity: 'sensor.prusa_progress',
+        filename_entity: 'sensor.prusa_filename',
+        print_finish_entity: 'sensor.prusa_print_finish',
+        print_speed_entity: 'sensor.prusa_print_speed',
+        nozzle_temp_entity: 'sensor.prusa_nozzle_temperature',
+        nozzle_target_entity: 'sensor.prusa_nozzle_target_temperature',
+        bed_temp_entity: 'sensor.prusa_heatbed_temperature',
+        bed_target_entity: 'sensor.prusa_heatbed_target_temperature',
+        pause_button_entity: 'button.prusa_pause_job',
+        resume_button_entity: 'button.prusa_resume_job',
+        cancel_button_entity: 'button.prusa_cancel_job',
+        power_switch_entity: 'switch.prusa_power',
+      };
+
+      const cards = [
+        ['mk4', 'Prusa MK4'],
+        ['coreone', 'Prusa CORE One'],
+        ['xl', 'Prusa XL'],
+      ].map(([printer_model, name]) => {
+        const card = document.createElement('prusalink-card');
+        card.setConfig({ ...baseConfig, printer_model, name });
+        $('cards').appendChild(card);
+        return card;
+      });
+
+      function update() {
+        const hass = { states: computeStates(), language: 'en', callService };
+        for (const card of cards) card.hass = hass;
+      }
+
+      for (const id of ['power', 'state', 'progress', 'nozzle', 'bed']) $(id).addEventListener('input', update);
+      $('light').addEventListener('change', () => document.body.classList.toggle('light', $('light').checked));
+
+      setInterval(() => {
+        if (!$('auto').checked || ctl.state !== 'printing' || !ctl.power) return;
+        const next = ctl.progress >= 100 ? 0 : ctl.progress + 1;
+        $('progress').value = String(next);
+        update();
+      }, 500);
+
+      update();
+    </script>
+  </body>
+</html>
