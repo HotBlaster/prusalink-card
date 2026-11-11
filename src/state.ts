@@ -31,6 +31,7 @@ export interface PrinterViewModel {
   printSpeed?: number;
   material?: string;
   previewUrl?: string;
+  cameraUrl?: string;
   position: Position;
   power?: string;
   energy?: string;
@@ -109,6 +110,20 @@ export function formatDuration(seconds: number): string {
   return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 }
 
+export type CardView = 'printer' | 'preview' | 'camera';
+
+export function availableViews(vm: Pick<PrinterViewModel, 'previewUrl' | 'cameraUrl'>): CardView[] {
+  const views: CardView[] = ['printer'];
+  if (vm.previewUrl) views.push('preview');
+  if (vm.cameraUrl) views.push('camera');
+  return views;
+}
+
+// Turns a camera snapshot URL into the MJPEG live stream served by Home Assistant for any camera.
+export function cameraStreamUrl(entityPicture: string): string {
+  return entityPicture.replace('/api/camera_proxy/', '/api/camera_proxy_stream/');
+}
+
 export function buildViewModel(
   hass: HomeAssistant,
   config: PrusaLinkCardConfig,
@@ -137,6 +152,8 @@ export function buildViewModel(
   };
   const preview = getEntity(hass, config.preview_entity);
   const previewUrl = preview?.attributes.entity_picture;
+  const camera = getEntity(hass, config.camera_entity);
+  const cameraPicture = camera?.attributes.entity_picture;
 
   return {
     mode,
@@ -156,6 +173,9 @@ export function buildViewModel(
     material: textState(hass, config.material_entity),
     previewUrl:
       on && isAvailable(preview) && typeof previewUrl === 'string' ? previewUrl : undefined,
+    // The camera may be independent from the printer (e.g. a webcam), so it is shown even when off.
+    cameraUrl:
+      isAvailable(camera) && typeof cameraPicture === 'string' ? cameraStreamUrl(cameraPicture) : undefined,
     position: on
       ? {
           x: numericState(hass, config.x_position_entity),

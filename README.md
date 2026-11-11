@@ -11,6 +11,8 @@ pause / resume / continue / cancel controls, a power switch, power and energy co
 - The printer animates only while printing, freezes while paused and is dimmed when off.
 - The printed object grows with job progress; nozzle and bed glow with temperature.
 - When the X/Y position sensors are configured, the toolhead (and the MK4 bed) follow the real position.
+- An arrow on the right of the printer switches to the job preview (while a job with a preview is available)
+  and then to the live camera feed (when `camera_entity` is set); the arrow is hidden when there is nothing else to show.
 - Cancelling a job or switching the printer off during a print asks for confirmation.
 - English and Italian, following the Home Assistant user language.
 
@@ -43,6 +45,7 @@ filename_entity: sensor.mk4_filename
 print_finish_entity: sensor.mk4_print_finish
 print_speed_entity: sensor.mk4_print_speed
 preview_entity: camera.mk4_preview
+camera_entity: camera.mk4_webcam # any camera, shown as a live feed
 nozzle_temp_entity: sensor.mk4_nozzle_temperature
 nozzle_target_entity: sensor.mk4_nozzle_target_temperature
 bed_temp_entity: sensor.mk4_heatbed_temperature

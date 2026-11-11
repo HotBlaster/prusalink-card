@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildViewModel, formatDuration, glowLevel } from './state';
+import { availableViews, buildViewModel, formatDuration, glowLevel } from './state';
 import type { HassEntity, HomeAssistant, PrusaLinkCardConfig } from './types';
 
 const entity = (entity_id: string, state: string, attributes: Record<string, unknown> = {}): HassEntity => ({
@@ -191,9 +191,31 @@ describe('buildViewModel', () => {
     expect(buildViewModel(mockHass(states), config).previewUrl).toBeUndefined();
   });
 
+  it('exposes the live stream of an available camera, even when the printer is off', () => {
+    const cameraConfig = { ...config, camera_entity: 'camera.webcam' };
+    const states: Record<string, MockState> = {
+      'sensor.mk4': 'idle',
+      'switch.mk4_power': 'off',
+      'camera.webcam': ['streaming', { entity_picture: '/api/camera_proxy/camera.webcam?token=abc' }],
+    };
+    expect(buildViewModel(mockHass(states), cameraConfig).cameraUrl).toBe(
+      '/api/camera_proxy_stream/camera.webcam?token=abc',
+    );
+    states['camera.webcam'] = ['unavailable', { entity_picture: '/x' }];
+    expect(buildViewModel(mockHass(states), cameraConfig).cameraUrl).toBeUndefined();
+  });
+
   it('localizes the off label', () => {
     const hass = mockHass({ 'sensor.mk4': 'idle', 'switch.mk4_power': 'off' }, 'it');
     expect(buildViewModel(hass, config).stateLabel).toBe('Spenta');
+  });
+});
+
+describe('availableViews', () => {
+  it('lists only the views with content, in order', () => {
+    expect(availableViews({})).toEqual(['printer']);
+    expect(availableViews({ cameraUrl: '/c' })).toEqual(['printer', 'camera']);
+    expect(availableViews({ previewUrl: '/p', cameraUrl: '/c' })).toEqual(['printer', 'preview', 'camera']);
   });
 });
 

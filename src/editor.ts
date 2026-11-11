@@ -46,6 +46,7 @@ function buildSchema(hass: HomeAssistant, editableExtras: boolean) {
       prusalink('print_speed_entity', 'sensor'),
       prusalink('material_entity', 'sensor'),
       prusalink('preview_entity', 'camera'),
+      { name: 'camera_entity', selector: { entity: { filter: { domain: 'camera' } } } },
     ]),
     section('temperatures', [
       prusalink('nozzle_temp_entity', 'sensor'),

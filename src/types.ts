@@ -41,6 +41,7 @@ export interface PrusaLinkCardConfig {
   cancel_button_entity?: string;
   continue_button_entity?: string;
   preview_entity?: string;
+  camera_entity?: string;
   x_position_entity?: string;
   y_position_entity?: string;
   z_height_entity?: string;

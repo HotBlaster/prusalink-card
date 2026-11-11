@@ -7,9 +7,11 @@ import { extraIcon, extraService, normalizeExtras } from './extras';
 import { localize } from './localize';
 import { printerStyles, renderPrinter } from './printers';
 import {
+  availableViews,
   buildViewModel,
   formatDuration,
   formatEntity,
+  type CardView,
   type Position,
   type PrinterViewModel,
   type Temperature,
@@ -39,6 +41,7 @@ export class PrusaLinkCard extends LitElement {
   @property({ attribute: false }) hass?: HomeAssistant;
   @state() private _config?: PrusaLinkCardConfig;
   @state() private _confirm?: PendingConfirm;
+  @state() private _view: CardView = 'printer';
 
   static getConfigElement(): HTMLElement {
     return document.createElement('prusalink-card-editor');
@@ -89,7 +92,7 @@ export class PrusaLinkCard extends LitElement {
         </div>
         ${this._renderPowerButton(vm)}
       </div>
-      <div class="printer-wrap">${renderPrinter(this._config.printer_model, vm)}</div>
+      <div class="printer-wrap">${this._renderView(vm)}</div>
       ${this._renderProgress(vm)} ${this._renderInfo(vm)} ${this._renderExtras()} ${this._renderActions(vm)}
       ${this._confirm
         ? html`<prusalink-confirm
@@ -105,6 +108,40 @@ export class PrusaLinkCard extends LitElement {
 
   private _t(key: string): string {
     return localize(this.hass, key);
+  }
+
+  private _renderView(vm: PrinterViewModel) {
+    const views = availableViews(vm);
+    // Falls back to the printer when the selected view disappears (e.g. the job ended).
+    const view = views.includes(this._view) ? this._view : 'printer';
+    let content: TemplateResult;
+    if (view === 'preview') {
+      content = html`<img
+        class="view-image"
+        src=${vm.previewUrl!}
+        alt=${this._t('view.preview')}
+        @click=${() => this._moreInfo(this._config!.preview_entity!)}
+      />`;
+    } else if (view === 'camera') {
+      content = html`<img
+        class="view-image"
+        src=${vm.cameraUrl!}
+        alt=${this._t('view.camera')}
+        @click=${() => this._moreInfo(this._config!.camera_entity!)}
+      />`;
+    } else {
+      content = renderPrinter(this._config!.printer_model, vm);
+    }
+    if (views.length < 2) return content;
+    const next = views[(views.indexOf(view) + 1) % views.length];
+    const nextLabel = this._t(`view.show_${next}`);
+    return html`${content}
+      <button class="view-next" title=${nextLabel} aria-label=${nextLabel} @click=${() => (this._view = next)}>
+        <ha-icon icon="mdi:chevron-right"></ha-icon>
+      </button>
+      <div class="view-dots">
+        ${views.map((v) => html`<span class="dot ${v === view ? 'active' : ''}"></span>`)}
+      </div>`;
   }
 
   private _renderPowerButton(vm: PrinterViewModel) {
@@ -362,8 +399,57 @@ export class PrusaLinkCard extends LitElement {
         cursor: default;
       }
       .printer-wrap {
+        position: relative;
         height: 240px;
         margin: 8px 0 12px;
+      }
+      .view-image {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        border-radius: 8px;
+        background: var(--secondary-background-color, rgba(127, 127, 127, 0.15));
+        cursor: pointer;
+      }
+      .view-next {
+        position: absolute;
+        top: 50%;
+        right: 0;
+        transform: translateY(-50%);
+        display: grid;
+        place-items: center;
+        width: 36px;
+        height: 36px;
+        padding: 0;
+        border: none;
+        border-radius: 50%;
+        cursor: pointer;
+        background: rgba(0, 0, 0, 0.35);
+        color: #fff;
+        transition: background 0.2s;
+      }
+      .view-next:hover {
+        background: var(--plc-accent);
+      }
+      .view-dots {
+        position: absolute;
+        bottom: 6px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 6px;
+      }
+      .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--secondary-text-color);
+        opacity: 0.4;
+      }
+      .dot.active {
+        background: var(--plc-accent);
+        opacity: 1;
       }
       .progress-text {
         display: flex;
